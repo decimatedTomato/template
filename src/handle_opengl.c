@@ -21,6 +21,7 @@ unsigned int current_shader;
 
 // Uniform locations
 int location_time;
+int location_resolution;
 
 // Windows
 GLFWwindow* window;
@@ -232,6 +233,12 @@ void init_Uniforms() {
     location_time = glGetUniformLocation(current_shader, "u_time");
     assert(location_time != -1);
     glUniform1f(location_time, glfwGetTime());    
+
+    location_resolution = glGetUniformLocation(current_shader, "u_resolution");
+    assert(location_resolution != -1);
+    glfwGetWindowSize(window, &window_width, &window_height); //TODO Change to use callback function
+    glViewport(0, 0, window_width, window_height);
+    glUniform2f(location_resolution, window_width, window_height);
 }
 
 void take_user_input() {
@@ -255,7 +262,7 @@ void take_user_input() {
     }
     if(glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
         if(!just_refreshed) {
-            refresh_seeds();
+            // restart();
             just_refreshed = true;
         }
     } else just_refreshed = false;
@@ -277,6 +284,7 @@ bool render_frame() {
     /* Update uniforms */
     glfwGetWindowSize(window, &window_width, &window_height); //TODO Change to use callback function
     glViewport(0, 0, window_width, window_height);
+    glUniform2f(location_resolution, window_width, window_height);
     glUniform1f(location_time, glfwGetTime());
 
     /* Draw the bound buffer With an index buffer SQUARE */
