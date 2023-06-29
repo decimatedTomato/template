@@ -12,8 +12,16 @@
 #define MONITOR_WIDTH 1920
 #define MONITOR_HEIGHT 1080
 
+// Image stuff
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image/stb_image.h"
+#define TARGET_IMAGE "res/Image/texture.jpg"
+
+#include "simulation.h"
+
 // State (should not be in this file)
-bool fullscreen = false, just_pressed = false, just_refreshed = false;
+bool fullscreen = false;
+bool just_fullscreened = false, just_loaded = false, just_paused = false, just_stepped = false, just_saved = false;
 int prev_width, prev_height, prev_x, prev_y;
 
 // Shaders
@@ -21,6 +29,11 @@ unsigned int current_shader;
 
 // Uniform locations
 int location_time;
+int location_resolution;
+
+int location_texture; // The values of the grid particles
+int location_color_count; // The number of colors in the color palette
+int location_colors; // The color palette
 
 // Windows
 GLFWwindow* window;
@@ -73,12 +86,7 @@ void APIENTRY glDebugOutput(GLenum source, GLenum type, unsigned int id, GLenum 
     printf("\n");
 }
 
-typedef struct ShaderProgramSource {
-    char* VertexSource;
-    char* FragmentSource;
-} ShaderProgramSource;
-
-char* readFile(const char* filepath) {
+static char* readFile(const char* filepath) {
 	char* buffer = '\0';
 	long length;
 	FILE* f = fopen(filepath, "r");
@@ -96,22 +104,6 @@ char* readFile(const char* filepath) {
 	}
 
 	return buffer;
-}
-
-static ShaderProgramSource ParseShader(char* source) {
-    ShaderProgramSource ss;
-    char *p = source;
-    while((p = strstr(p, "#shader "))) {
-        *p = '\0';
-        p += 8;
-        if(strncmp("vertex", p, 6) == 0) ss.VertexSource = p + 7;
-        else if(strncmp("fragment", p, 8) == 0) ss.FragmentSource = p + 9;
-        else {
-            printf("Shader type not recognized :%s:", p);
-            exit(1);
-        }
-    }
-    return ss;
 }
 
 static unsigned int CompileShader(unsigned int type, const char* src) {
@@ -137,8 +129,7 @@ static unsigned int CompileShader(unsigned int type, const char* src) {
     return id;
 }
 
-static unsigned int CreateShader(char* vertexShader, char* fragmentShader)
-{
+static unsigned int CreateShader(char* vertexShader, char* fragmentShader) {
     unsigned int program = glCreateProgram();
     unsigned int vs = CompileShader(GL_VERTEX_SHADER, vertexShader);
     unsigned int fs = CompileShader(GL_FRAGMENT_SHADER, fragmentShader);
@@ -193,11 +184,12 @@ void init_Debug_Callback() {
 }
 
 void init_Quad() {
-    float square_positions[] = {
-        -1.0f, -1.0f,
-         1.0f, -1.0f,
-         1.0f,  1.0f,
-        -1.0f,  1.0f
+    float square_attributes[] = {
+        // positions   texCoords
+        -1.0f, -1.0f,  0.0f, 0.0f, // 0
+         1.0f, -1.0f,  1.0f, 0.0f, // 1
+         1.0f,  1.0f,  1.0f, 1.0f, // 2
+        -1.0f,  1.0f,  0.0f, 1.0f  // 3
     };
     unsigned int square_indices[] = {
         0, 1, 2,
@@ -207,10 +199,14 @@ void init_Quad() {
     unsigned int square_buffer;
     glGenBuffers(1, &square_buffer);
     glBindBuffer(GL_ARRAY_BUFFER, square_buffer);
-    glBufferData(GL_ARRAY_BUFFER, 6 * 2 * sizeof(float), square_positions, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 4 * 2 * 2 * sizeof(float), square_attributes, GL_STATIC_DRAW);
 
+    // positions
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), 0);
+    // uvs
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
 
     unsigned int index_buffer_object;
     glGenBuffers(1, &index_buffer_object);
@@ -218,28 +214,37 @@ void init_Quad() {
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, 6 * sizeof(unsigned int), square_indices, GL_STATIC_DRAW);
 }
 
-void init_Shader(char* shader_filepath) {
-    char* shader_contents = readFile(shader_filepath);
-    ShaderProgramSource source = ParseShader(shader_contents);
-    // printf("VERTEX SHADER\n%s\n", source.VertexSource);
-    // printf("FRAGMENT SHADER\n%s\n", source.FragmentSource);
-    current_shader = CreateShader(source.VertexSource, source.FragmentSource);
-    free(shader_contents);
+void init_Shader(char *vertex_filepath, char *fragment_filepath) {
+    char *vertex_shader = readFile(vertex_filepath);
+    char *fragment_shader = readFile(fragment_filepath);
+    current_shader = CreateShader(vertex_shader, fragment_shader);
+    free(vertex_shader);
+    free(fragment_shader);
     glUseProgram(current_shader);
 }
 
 void init_Uniforms() {
     location_time = glGetUniformLocation(current_shader, "u_time");
-    assert(location_time != -1);
-    glUniform1f(location_time, glfwGetTime());    
+    // assert(location_time != -1);
+    glUniform1f(location_time, glfwGetTime());
+
+    location_resolution = glGetUniformLocation(current_shader, "u_resolution");
+    assert(location_resolution != -1);
+    glfwGetWindowSize(window, &window_width, &window_height);
+    glViewport(0, 0, window_width, window_height);
+    glUniform2f(location_resolution, window_width, window_height);
+
+    location_texture = glGetUniformLocation(current_shader, "u_texture");
+    // assert(location_texture != -1);
+    glUniform1i(location_texture, 0);
 }
 
 void take_user_input() {
     glfwPollEvents();
     if(glfwGetKey(window, GLFW_KEY_F) == GLFW_PRESS) {
-        if(!just_pressed) {
+        if(!just_fullscreened) {
             fullscreen = !fullscreen;
-            just_pressed = true;
+            just_fullscreened = true;
             if(fullscreen) {
                 prev_width = window_width;
                 prev_height = window_height;
@@ -249,22 +254,31 @@ void take_user_input() {
                 glfwSetWindowMonitor(window, NULL, prev_x, prev_y, prev_width, prev_height, GLFW_DONT_CARE);
             }
         }
-    } else just_pressed = false;
+    } else just_fullscreened = false;
     if(glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS) {
-        // Pause
-    }
-    if(glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
-        if(!just_refreshed) {
-            refresh_seeds();
-            just_refreshed = true;
+        if(!just_paused) {
+            pause();
+            just_paused = true;
         }
-    } else just_refreshed = false;
-    if(glfwGetKey(window, GLFW_KEY_COMMA) == GLFW_PRESS) {
-        // Previous frame
-    }
+    } else just_paused = false;
     if(glfwGetKey(window, GLFW_KEY_PERIOD) == GLFW_PRESS) {
-        // Next frame
-    }
+        if(!just_stepped) {
+            step();
+            just_stepped = true;
+        }
+    } else just_stepped = false;
+    if(glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        if(!just_saved) {
+            save();
+            just_saved = true;
+        }
+    } else just_saved = false;
+    if(glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+        if(!just_loaded) {
+            load();
+            just_loaded = true;
+        }
+    } else just_loaded = false;
     if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, 1);
     }
@@ -277,6 +291,7 @@ bool render_frame() {
     /* Update uniforms */
     glfwGetWindowSize(window, &window_width, &window_height); //TODO Change to use callback function
     glViewport(0, 0, window_width, window_height);
+    glUniform2f(location_resolution, window_width, window_height);
     glUniform1f(location_time, glfwGetTime());
 
     /* Draw the bound buffer With an index buffer SQUARE */
@@ -284,9 +299,6 @@ bool render_frame() {
 
     /* Swap front and back buffers */
     glfwSwapBuffers(window);
-
-    /* Poll for and process events */
-    take_user_input();
     
     return !glfwWindowShouldClose(window);
 }
@@ -295,4 +307,40 @@ void clean_up() {
     glDeleteProgram(current_shader);
     //TODO probably forgetting some stuff
     glfwTerminate();
+}
+
+// HANDLE IMAGES
+void load_image_texture(int slot) {
+    stbi_set_flip_vertically_on_load(1);
+    int width, height, channels;
+    unsigned char *img = stbi_load(TARGET_IMAGE, &width, &height, &channels, 0);
+    // printf("width %d height %d channels %d\n", width, height, channels);
+    if (img == NULL) {
+        printf("Error loading the image\n");
+        exit(1);
+    }
+
+    GLuint texture_map;
+    glBindTexture(GL_TEXTURE_2D, texture_map);
+    glGenTextures(1, &texture_map);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    glActiveTexture(GL_TEXTURE0 + slot);
+    // Made for jpeg (3 channels)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img);
+    stbi_image_free(img);
+}
+
+void init_texture() {
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    glActiveTexture(GL_TEXTURE0);
+    // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GRID_WIDTH, GRID_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, current_grid);
 }
