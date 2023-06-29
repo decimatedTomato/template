@@ -12,11 +12,6 @@
 #define MONITOR_WIDTH 1920
 #define MONITOR_HEIGHT 1080
 
-// Image stuff
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image/stb_image.h"
-#define TARGET_IMAGE "res/Image/texture.jpg"
-
 #include "simulation.h"
 
 // State (should not be in this file)
@@ -307,40 +302,4 @@ void clean_up() {
     glDeleteProgram(current_shader);
     //TODO probably forgetting some stuff
     glfwTerminate();
-}
-
-// HANDLE IMAGES
-void load_image_texture(int slot) {
-    stbi_set_flip_vertically_on_load(1);
-    int width, height, channels;
-    unsigned char *img = stbi_load(TARGET_IMAGE, &width, &height, &channels, 0);
-    // printf("width %d height %d channels %d\n", width, height, channels);
-    if (img == NULL) {
-        printf("Error loading the image\n");
-        exit(1);
-    }
-
-    GLuint texture_map;
-    glBindTexture(GL_TEXTURE_2D, texture_map);
-    glGenTextures(1, &texture_map);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
-    glActiveTexture(GL_TEXTURE0 + slot);
-    // Made for jpeg (3 channels)
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img);
-    stbi_image_free(img);
-}
-
-void init_texture() {
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-
-    glActiveTexture(GL_TEXTURE0);
-    // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, GRID_WIDTH, GRID_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, current_grid);
 }
