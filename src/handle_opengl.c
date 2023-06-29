@@ -225,8 +225,18 @@ void init_Shader(char *vertex_filepath, char *fragment_filepath) {
 
 void init_Uniforms() {
     location_time = glGetUniformLocation(current_shader, "u_time");
-    assert(location_time != -1);
+    // assert(location_time != -1);
     glUniform1f(location_time, glfwGetTime());    
+
+    location_resolution = glGetUniformLocation(current_shader, "u_resolution");
+    assert(location_resolution != -1);
+    glfwGetWindowSize(window, &window_width, &window_height);
+    glViewport(0, 0, window_width, window_height);
+    glUniform2f(location_resolution, window_width, window_height);
+
+    location_texture = glGetUniformLocation(current_shader, "u_texture");
+    // assert(location_texture != -1);
+    glUniform1i(location_texture, 0);
 }
 
 void take_user_input() {
